@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+.vscode
+.next/cache
+.next/trace
+*.md
+.DS_Store
+.dockerignore
+docker-compose.yml
+Dockerfile
