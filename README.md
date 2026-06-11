@@ -8,7 +8,7 @@
 |---|---|
 | **Framework** | Next.js 16 (App Router, Turbopack) |
 | **Ngôn ngữ** | TypeScript |
-| **Database** | Turso (libsql) — SQLite tương thích |
+| **Database** | Turso (libsql) — SQLite tương thích, hỗ trợ local file & Turso Cloud |
 | **UI** | Ant Design 5 + Tailwind CSS |
 | **Auth** | Session-based (SHA256 hash) |
 | **Deploy** | Docker (image ~64MB, node:20-alpine) |
@@ -42,14 +42,60 @@ inventory-app/
 ├── lib/
 │   ├── db.ts            # Database connection + schema
 │   └── auth.ts          # Auth utilities
-├── data/                # SQLite database (auto-generated)
+├── data/                # SQLite database (auto-generated, local mode)
 ├── proxy.ts             # Next.js 16 middleware (auth guard)
 └── next.config.ts       # Next.js configuration
 ```
 
-## 🐳 Docker
+## ☁️ Kết Nối Turso Cloud
 
-Image được build sẵn và push lên registry:
+App hỗ trợ cả local SQLite và Turso Cloud. Mặc định dùng local file (`data/inventory.db`). Để kết nối Turso Cloud:
+
+### 1. Tạo Database trên turso.tech
+
+```bash
+# Đăng nhập Turso CLI
+turso auth login
+
+# Tạo database mới
+turso db create inventory-app
+
+# Lấy database URL
+turso db show inventory-app --url
+# → libs://inventory-app-<org>.turso.io
+
+# Tạo auth token
+turso db tokens create inventory-app
+```
+
+### 2. Cấu hình biến môi trường
+
+Tạo file `.env.local`:
+
+```env
+TURSO_DATABASE_URL=libs://inventory-app-<org>.turso.io
+TURSO_AUTH_TOKEN=<token-từ-turso>
+```
+
+Hoặc chạy Docker:
+
+```bash
+docker run -d --name inventory-app -p 3000:3000 \
+  -e TURSO_DATABASE_URL=libs://inventory-app-<org>.turso.io \
+  -e TURSO_AUTH_TOKEN=<token> \
+  registry.binh.name.vn/inventory-app:latest
+```
+
+### 3. Chạy local
+
+```bash
+npm run dev
+# App tự động phát hiện biến môi trường và kết nối Turso Cloud
+```
+
+> **Lưu ý:** Schema (`CREATE TABLE IF NOT EXISTS`) và seed admin user sẽ được tạo tự động khi app khởi động lần đầu trên Turso Cloud.
+
+## 🐳 Docker (Local SQLite)
 
 ```bash
 docker pull registry.binh.name.vn/inventory-app:latest
@@ -59,24 +105,19 @@ docker run -d --name inventory-app -p 3000:3000 \
   registry.binh.name.vn/inventory-app:latest
 ```
 
-> **Lưu ý:** Mount volume `inventory-data:/app/data` để dữ liệu SQLite được lưu persistent khi restart container.
+> Mount volume `inventory-data:/app/data` để dữ liệu SQLite persistent khi restart container.
 
-## 🔧 Cài Đặt & Chạy Local
+## 🔧 Cài Đặt & Chạy Local (không Turso)
 
 ```bash
-# Clone và cài dependencies
 git clone https://github.com/thanhbinhqs/inventory-app.git
 cd inventory-app
 npm install
 
-# Build production
 npm run build
-
-# Chạy development server
 npm run dev
+# → http://localhost:3000
 ```
-
-Mở trình duyệt tại [http://localhost:3000](http://localhost:3000)
 
 ### Tài khoản mặc định
 
@@ -103,7 +144,6 @@ Mở trình duyệt tại [http://localhost:3000](http://localhost:3000)
 ## 📊 Database Schema
 
 ```sql
--- Users
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
@@ -112,11 +152,12 @@ CREATE TABLE users (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
--- Products
 CREATE TABLE products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL DEFAULT 'cái',
   quantity INTEGER NOT NULL DEFAULT 0,
   purchase_price REAL NOT NULL DEFAULT 0,
   selling_price REAL NOT NULL DEFAULT 0,
@@ -124,16 +165,16 @@ CREATE TABLE products (
   updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
--- Transactions
 CREATE TABLE transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('IN','OUT')),
+  type TEXT NOT NULL CHECK(type IN ('IN', 'OUT')),
   quantity INTEGER NOT NULL CHECK(quantity > 0),
   unit_price REAL NOT NULL DEFAULT 0,
   total_price REAL GENERATED ALWAYS AS (quantity * unit_price) STORED,
+  note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  FOREIGN KEY (product_id) REFERENCES products(id)
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 );
 ```
 
@@ -145,12 +186,12 @@ CREATE TABLE transactions (
 - [x] Báo cáo tổng hợp (ngày/tuần/tháng/năm)
 - [x] Dashboard với biểu đồ
 - [x] Docker image
+- [x] Kết nối Turso Cloud
 - [ ] Phân quyền người dùng
 - [ ] Xuất báo cáo PDF/Excel
 - [ ] Quản lý nhà cung cấp
 - [ ] Kiểm kê kho định kỳ
 - [ ] Mobile app (React Native)
-- [ ] Kết nối Turso Cloud (distributed SQLite)
 
 ## 📝 Giấy Phép
 
